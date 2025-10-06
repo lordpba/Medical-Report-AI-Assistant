@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analizzatore RX (Diretto a Ollama)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Analisi RX (Diretto a Ollama)</h1>
+            <p class="text-md text-gray-600 mt-2">Carica un'immagine di una radiografia (RX) per ottenere un'analisi generata da MedGemma in locale.</p>
+        </header>
+
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="mb-4">
+                <label for="image-upload" class="block text-sm font-medium text-gray-700 mb-2">Carica Immagine RX:</label>
+                <input type="file" id="image-upload" accept="image/png, image/jpeg, image/webp" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+            </div>
+            
+            <div class="mb-4">
+                <label for="model-select" class="block text-sm font-medium text-gray-700 mb-2">Seleziona Modello AI:</label>
+                <select id="model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                    <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
+                    <option value="puyangwang/medgemma-27b-it:q4_k_m">MedGemma 27B</option>
+                    <option value="gemma3:4b">Gemma3 4B</option>
+                    <option value="gemma3:12b">Gemma3 12B</option>
+                    <option value="gemma3:27b">Gemma3 27B</option>
+                </select>
+            </div>
+
+            <div class="mb-6">
+                 <label for="prompt-text" class="block text-sm font-medium text-gray-700 mb-2">Prompt per l'analisi:</label>
+                 <textarea id="prompt-text" rows="2" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="Esempio: Analizza questa radiografia del torace e descrivi eventuali anomalie.">Analizza questa radiografia del torace e descrivi eventuali anomalie.</textarea>
+            </div>
+
+            <button id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-300 ease-in-out disabled:bg-gray-400">
+                Analizza Immagine
+            </button>
+        </div>
+
+        <div id="results" class="grid md:grid-cols-2 gap-8 hidden">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Immagine Caricata</h2>
+                <img id="image-preview" src="" alt="Anteprima RX" class="w-full h-auto rounded-md object-contain"/>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Report AI - MedGemma</h2>
+                <div id="loader" class="flex justify-center items-center h-48 hidden">
+                    <div class="loader"></div>
+                    <p class="ml-4 text-gray-600">Analisi in corso...</p>
+                </div>
+                <div id="report-content" class="text-gray-700 whitespace-pre-wrap"></div>
+            </div>
+        </div>
+         <div class="mt-8 text-center">
+            <p class="text-xs text-gray-500">ATTENZIONE: Questo strumento è un prototipo per scopi dimostrativi e di ricerca. L'analisi generata non deve essere utilizzata per diagnosi mediche reali.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const imageUpload = document.getElementById('image-upload');
+            const submitBtn = document.getElementById('submit-btn');
+            const imagePreview = document.getElementById('image-preview');
+            const resultsDiv = document.getElementById('results');
+            const loader = document.getElementById('loader');
+            const reportContent = document.getElementById('report-content');
+            const promptText = document.getElementById('prompt-text');
+            const modelSelect = document.getElementById('model-select');
+
+            let imageDataUrl = null;
+
+            imageUpload.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        imageDataUrl = e.target.result;
+                        imagePreview.src = imageDataUrl;
+                        resultsDiv.classList.remove('hidden');
+                        reportContent.textContent = '';
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            submitBtn.addEventListener('click', async () => {
+                if (!imageDataUrl || !promptText.value) {
+                    alert('Per favore, carica un\'immagine e inserisci un prompt.');
+                    return;
+                }
+
+                loader.classList.remove('hidden');
+                reportContent.innerHTML = '';
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Analisi in corso...';
+                
+                const base64Image = imageDataUrl.split(',')[1];
+                const selectedModel = modelSelect.value;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minuti di timeout
+
+                try {
+                    const ollamaUrl = 'http://localhost:11434/api/generate';
+
+                    const payload = {
+                        model: selectedModel,
+                        prompt: promptText.value,
+                        images: [base64Image],
+                        stream: false
+                    };
+
+                    const response = await fetch(ollamaUrl, {
+                        method: 'POST',
+                        signal: controller.signal,
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload),
+                    });
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Errore dal server Ollama: ${response.status} ${response.statusText}. Dettagli: ${errorText}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    console.log('Dati ricevuti da Ollama:', result);
+
+                    if (result && result.response) {
+                        reportContent.textContent = result.response;
+                    } else {
+                        reportContent.textContent = 'Risposta ricevuta da Ollama, ma il formato non è corretto. Controlla la console del browser e il log di Ollama.';
+                        reportContent.textContent += '\n\nDati grezzi ricevuti:\n' + JSON.stringify(result, null, 2);
+                    }
+
+                } catch (error) {
+                    console.error('Errore durante l\'analisi:', error);
+                    if (error.name === 'AbortError') {
+                        reportContent.textContent = 'Si è verificato un errore: Timeout. Il modello ha impiegato troppo tempo per rispondere. Prova con un modello più piccolo o controlla le performance del tuo server Ollama.';
+                    } else {
+                        reportContent.textContent = `Si è verificato un errore di comunicazione con Ollama. Assicurati che Ollama sia in esecuzione e configurato per accettare richieste CORS da http://localhost:8000. Dettagli: ${error.message}`;
+                    }
+                } finally {
+                    clearTimeout(timeoutId);
+                    loader.classList.add('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Analizza Immagine';
+                }
+            });
+        });
+    </script>
+
+</body>
+</html>

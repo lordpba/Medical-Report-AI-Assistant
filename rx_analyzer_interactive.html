@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistente Analisi Referti (Diretto a Ollama)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #chat-history {
+            height: 400px;
+            overflow-y: auto;
+        }
+        .chat-bubble {
+            max-width: 85%;
+            padding: 10px 15px;
+            border-radius: 20px;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+        }
+        .user-bubble {
+            background-color: #3b82f6;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 5px;
+        }
+        .ai-bubble {
+            background-color: #e5e7eb;
+            color: #1f2937;
+            align-self: flex-start;
+            border-bottom-left-radius: 5px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-6xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Assistente Analisi Referti</h1>
+            <p class="text-md text-gray-600 mt-2">Carica un referto, ottieni un'analisi AI e poni domande di approfondimento.</p>
+        </header>
+
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- Colonna di Sinistra: Controlli e Immagine -->
+            <div>
+                <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                    <div class="mb-4">
+                        <label for="report-type-select" class="block text-sm font-medium text-gray-700 mb-2">1. Seleziona Tipo di Referto:</label>
+                        <select id="report-type-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                            <option value="rx">Radiografia (RX)</option>
+                            <option value="ecg">Elettrocardiogramma (ECG)</option>
+                            <option value="blood">Analisi del Sangue</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="image-upload" class="block text-sm font-medium text-gray-700 mb-2">2. Carica Immagine del Referto:</label>
+                        <input type="file" id="image-upload" accept="image/png, image/jpeg, image/webp" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="analysis-model-select" class="block text-sm font-medium text-gray-700 mb-2">3. Seleziona Modello per Analisi Iniziale:</label>
+                        <select id="analysis-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                            <option value="puyangwang/medgemma-27b-it:q4_k_m" selected>MedGemma 27B</option>
+                            <option value="gemma3:27b">Gemma3 27B</option>
+                            <option value="gemma3:12b">Gemma3 12B</option>
+                            <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-6">
+                         <label for="prompt-text" class="block text-sm font-medium text-gray-700 mb-2">4. Prompt per l'analisi (modificabile):</label>
+                         <textarea id="prompt-text" rows="5" class="w-full p-2 border border-gray-300 rounded-md shadow-sm"></textarea>
+                    </div>
+
+                    <button id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 ease-in-out disabled:bg-gray-400">
+                        Genera Analisi Iniziale
+                    </button>
+                </div>
+                <div id="image-container" class="bg-white rounded-lg shadow-md p-6 hidden">
+                    <h2 class="text-xl font-bold mb-4 border-b pb-2">Referto Caricato</h2>
+                    <img id="image-preview" src="" alt="Anteprima Referto" class="w-full h-auto rounded-md object-contain"/>
+                </div>
+            </div>
+
+            <!-- Colonna di Destra: Chat -->
+            <div id="chat-column" class="bg-white rounded-lg shadow-md p-6 flex flex-col hidden">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Analisi Interattiva</h2>
+                <div id="chat-history" class="flex-grow flex flex-col space-y-2 p-3 bg-gray-50 rounded-md mb-4">
+                    <!-- I messaggi della chat verranno aggiunti qui -->
+                </div>
+                
+                 <div id="chat-loader" class="flex items-center text-gray-500 mb-4 hidden">
+                    <div class="loader"></div>
+                    <p class="ml-3">L'AI sta pensando...</p>
+                </div>
+
+                <div id="chat-controls" class="hidden">
+                     <div class="mb-4">
+                        <label for="chat-model-select" class="block text-sm font-medium text-gray-700 mb-2">Modello per la Chat:</label>
+                        <select id="chat-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                            <option value="amsaravi/medgemma-4b-it:q6" selected>MedGemma 4B (Veloce)</option>
+                            <option value="gemma3:4b">Gemma3 4B (Veloce)</option>
+                            <option value="gemma3:12b">Gemma3 12B (Medio)</option>
+                            <option value="puyangwang/medgemma-27b-it:q4_k_m">MedGemma 27B (Lento)</option>
+                        </select>
+                    </div>
+                    <form id="chat-form" class="flex items-center">
+                        <input type="text" id="chat-input" placeholder="Poni una domanda di approfondimento..." class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button type="submit" class="bg-blue-600 text-white font-bold py-3 px-4 rounded-r-lg hover:bg-blue-700">Invia</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- ELEMENTI UI ---
+    const imageUpload = document.getElementById('image-upload');
+    const submitBtn = document.getElementById('submit-btn');
+    const imagePreview = document.getElementById('image-preview');
+    const imageContainer = document.getElementById('image-container');
+    const chatColumn = document.getElementById('chat-column');
+    const chatHistory = document.getElementById('chat-history');
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const chatControls = document.getElementById('chat-controls');
+    const chatLoader = document.getElementById('chat-loader');
+    const analysisModelSelect = document.getElementById('analysis-model-select');
+    const chatModelSelect = document.getElementById('chat-model-select');
+    const promptText = document.getElementById('prompt-text');
+    const reportTypeSelect = document.getElementById('report-type-select');
+
+    // --- STATO APPLICAZIONE ---
+    let base64Image = null;
+    let conversation = [];
+
+    // --- PROMPT DI DEFAULT ---
+    const defaultPrompts = {
+        rx: "Analizza questa radiografia del torace e descrivi nel dettaglio ogni eventuale anomalia, basandoti esclusivamente sull'evidenza visiva.",
+        ecg: "Sei un assistente AI specializzato in cardiologia. Analizza questo tracciato ECG. Valuta il ritmo (es. sinusale, fibrillazione), calcola la frequenza cardiaca, misura gli intervalli (PR, QRS, QT) e l'asse cardiaco. Identifica e descrivi qualsiasi anomalia morfologica (es. ipertrofia, ischemia) o aritmia presente.",
+        blood: "Sei un assistente AI esperto in analisi di laboratorio. Interpreta i risultati di queste analisi del sangue. Per ogni valore, indica se rientra nei range di normalità standard. Evidenzia i valori anomali (alti o bassi), spiega le loro possibili implicazioni cliniche e le correlazioni tra di essi. Fornisci un sommario conclusivo."
+    };
+
+    // --- GESTIONE EVENTI ---
+
+    // Aggiorna il prompt quando cambia il tipo di referto
+    reportTypeSelect.addEventListener('change', (event) => {
+        const selectedType = event.target.value;
+        promptText.value = defaultPrompts[selectedType];
+    });
+
+    // Inizializza il prompt al caricamento della pagina
+    promptText.value = defaultPrompts[reportTypeSelect.value];
+
+    // Gestione upload immagine
+    imageUpload.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const imageDataUrl = e.target.result;
+                base64Image = imageDataUrl.split(',')[1];
+                imagePreview.src = imageDataUrl;
+                imageContainer.classList.remove('hidden');
+                chatColumn.classList.add('hidden'); // Nasconde la chat se si carica una nuova immagine
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+    // Gestione click per analisi iniziale
+    submitBtn.addEventListener('click', async () => {
+        if (!base64Image) {
+            alert('Per favore, carica un\'immagine del referto.');
+            return;
+        }
+
+        // Reset e setup UI
+        chatColumn.classList.remove('hidden');
+        chatHistory.innerHTML = '';
+        conversation = [];
+        chatControls.classList.add('hidden');
+        chatLoader.classList.remove('hidden');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Analisi in corso...';
+        
+        try {
+            const initialAnalysis = await callOllama(
+                analysisModelSelect.value, 
+                promptText.value, 
+                base64Image
+            );
+
+            conversation.push({ role: 'assistant', content: initialAnalysis });
+            addMessageToChat('ai', initialAnalysis);
+
+            chatControls.classList.remove('hidden');
+
+        } catch (error) {
+            console.error('Errore durante l\'analisi iniziale:', error);
+            addMessageToChat('ai', `Si è verificato un errore durante l'analisi iniziale: ${error.message}`);
+        } finally {
+            chatLoader.classList.add('hidden');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Genera Analisi Iniziale';
+        }
+    });
+
+    // Gestione invio messaggio in chat
+    chatForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const userMessage = chatInput.value.trim();
+        if (!userMessage) return;
+
+        addMessageToChat('user', userMessage);
+        conversation.push({ role: 'user', content: userMessage });
+        chatInput.value = '';
+        chatLoader.classList.remove('hidden');
+        chatForm.style.visibility = 'hidden';
+
+        const initialReport = conversation.find(m => m.role === 'assistant').content;
+        const lastQuestion = conversation.filter(m => m.role === 'user').slice(-1)[0].content;
+        const chatPromptContext = `Sei un assistente AI esperto. Hai già fornito il seguente report iniziale basato su un'immagine:\n\n---REPORT INIZIALE---\n${initialReport}\n\n---FINE REPORT---\n\nOra, rispondi alla seguente domanda di approfondimento dell'utente: "${lastQuestion}"`;
+
+        try {
+            const aiResponse = await callOllama(
+                chatModelSelect.value, 
+                chatPromptContext,
+                base64Image // Invia sempre l'immagine per il contesto visivo
+            );
+
+            addMessageToChat('ai', aiResponse);
+            conversation.push({ role: 'assistant', content: aiResponse });
+
+        } catch (error) {
+            console.error('Errore durante la chat:', error);
+            addMessageToChat('ai', `Si è verificato un errore: ${error.message}`);
+        } finally {
+            chatLoader.classList.add('hidden');
+            chatForm.style.visibility = 'visible';
+        }
+    });
+
+    // --- FUNZIONI HELPER ---
+
+    async function callOllama(model, prompt, image) {
+        const ollamaUrl = 'http://localhost:11434/api/generate';
+        const payload = {
+            model: model,
+            prompt: prompt,
+            images: [image],
+            stream: false
+        };
+
+        const response = await fetch(ollamaUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Errore dal server Ollama: ${response.status}. Dettagli: ${errorText}`);
+        }
+
+        const result = await response.json();
+        return result.response;
+    }
+
+    function addMessageToChat(sender, text) {
+        const bubble = document.createElement('div');
+        bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
+        bubble.textContent = text;
+        chatHistory.appendChild(bubble);
+        chatHistory.scrollTop = chatHistory.scrollHeight; // Auto-scroll
+    }
+});
+</script>
+
+</body>
+</html>
