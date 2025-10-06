@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Assistente Analisi Referti (Diretto a Ollama)</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inclusione di PDF.js da CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        // Imposta il worker per PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    </script>
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -21,7 +27,7 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        #chat-history {
+        #chat-history, #preview-content {
             height: 400px;
             overflow-y: auto;
         }
@@ -44,6 +50,12 @@
             align-self: flex-start;
             border-bottom-left-radius: 5px;
         }
+        #preview-content pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 0.875rem;
+            color: #374151;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -51,11 +63,11 @@
     <div class="container mx-auto p-4 md:p-8 max-w-6xl">
         <header class="text-center mb-8">
             <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Assistente Analisi Referti</h1>
-            <p class="text-md text-gray-600 mt-2">Carica un referto, ottieni un'analisi AI e poni domande di approfondimento.</p>
+            <p class="text-md text-gray-600 mt-2">Carica un referto (immagine, PDF, TXT), ottieni un'analisi e poni domande.</p>
         </header>
 
         <div class="grid md:grid-cols-2 gap-8">
-            <!-- Colonna di Sinistra: Controlli e Immagine -->
+            <!-- Colonna di Sinistra: Controlli e Anteprima -->
             <div>
                 <div class="bg-white rounded-lg shadow-md p-6 mb-8">
                     <div class="mb-4">
@@ -68,8 +80,8 @@
                     </div>
 
                     <div class="mb-4">
-                        <label for="image-upload" class="block text-sm font-medium text-gray-700 mb-2">2. Carica Immagine del Referto:</label>
-                        <input type="file" id="image-upload" accept="image/png, image/jpeg, image/webp" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                        <label for="file-upload" class="block text-sm font-medium text-gray-700 mb-2">2. Carica File del Referto:</label>
+                        <input type="file" id="file-upload" accept="image/png,image/jpeg,image/bmp,image/webp,application/pdf,text/plain" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
                     </div>
                     
                     <div class="mb-4">
@@ -91,9 +103,9 @@
                         Genera Analisi Iniziale
                     </button>
                 </div>
-                <div id="image-container" class="bg-white rounded-lg shadow-md p-6 hidden">
-                    <h2 class="text-xl font-bold mb-4 border-b pb-2">Referto Caricato</h2>
-                    <img id="image-preview" src="" alt="Anteprima Referto" class="w-full h-auto rounded-md object-contain"/>
+                <div id="preview-container" class="bg-white rounded-lg shadow-md p-6 hidden">
+                    <h2 class="text-xl font-bold mb-4 border-b pb-2">Anteprima Referto Caricato</h2>
+                    <div id="preview-content" class="bg-gray-50 p-2 rounded"></div>
                 </div>
             </div>
 
@@ -131,10 +143,10 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     // --- ELEMENTI UI ---
-    const imageUpload = document.getElementById('image-upload');
+    const fileUpload = document.getElementById('file-upload');
     const submitBtn = document.getElementById('submit-btn');
-    const imagePreview = document.getElementById('image-preview');
-    const imageContainer = document.getElementById('image-container');
+    const previewContainer = document.getElementById('preview-container');
+    const previewContent = document.getElementById('preview-content');
     const chatColumn = document.getElementById('chat-column');
     const chatHistory = document.getElementById('chat-history');
     const chatForm = document.getElementById('chat-form');
@@ -147,7 +159,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const reportTypeSelect = document.getElementById('report-type-select');
 
     // --- STATO APPLICAZIONE ---
-    let base64Image = null;
+    let fileContent = null; // Può essere base64 per immagini o testo per pdf/txt
+    let contentType = null; // 'image' o 'text'
     let conversation = [];
 
     // --- PROMPT DI DEFAULT ---
@@ -159,39 +172,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- GESTIONE EVENTI ---
 
-    // Aggiorna il prompt quando cambia il tipo di referto
     reportTypeSelect.addEventListener('change', (event) => {
-        const selectedType = event.target.value;
-        promptText.value = defaultPrompts[selectedType];
+        promptText.value = defaultPrompts[event.target.value];
     });
-
-    // Inizializza il prompt al caricamento della pagina
     promptText.value = defaultPrompts[reportTypeSelect.value];
 
-    // Gestione upload immagine
-    imageUpload.addEventListener('change', (event) => {
+    fileUpload.addEventListener('change', async (event) => {
         const file = event.target.files[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const imageDataUrl = e.target.result;
-                base64Image = imageDataUrl.split(',')[1];
-                imagePreview.src = imageDataUrl;
-                imageContainer.classList.remove('hidden');
-                chatColumn.classList.add('hidden'); // Nasconde la chat se si carica una nuova immagine
-            };
-            reader.readAsDataURL(file);
+        if (!file) return;
+
+        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Caricamento file...</p></div>`;
+        previewContainer.classList.remove('hidden');
+        chatColumn.classList.add('hidden');
+
+        try {
+            if (file.type.startsWith('image/')) {
+                contentType = 'image';
+                fileContent = await readFileAsBase64(file);
+                previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Anteprima Referto" class="w-full h-auto rounded-md object-contain"/>`;
+            } else if (file.type === 'application/pdf') {
+                contentType = 'text';
+                fileContent = await extractTextFromPdf(file);
+                previewContent.innerHTML = `<pre>${fileContent}</pre>`;
+            } else if (file.type === 'text/plain') {
+                contentType = 'text';
+                fileContent = await file.text();
+                previewContent.innerHTML = `<pre>${fileContent}</pre>`;
+            } else {
+                throw new Error('Formato file non supportato.');
+            }
+        } catch (error) {
+            console.error(error);
+            previewContent.innerHTML = `<p class="text-red-500">Errore nel caricamento del file: ${error.message}</p>`;
+            fileContent = null;
+            contentType = null;
         }
     });
 
-    // Gestione click per analisi iniziale
     submitBtn.addEventListener('click', async () => {
-        if (!base64Image) {
-            alert('Per favore, carica un\'immagine del referto.');
+        if (!fileContent) {
+            alert('Per favore, carica un file valido.');
             return;
         }
 
-        // Reset e setup UI
         chatColumn.classList.remove('hidden');
         chatHistory.innerHTML = '';
         conversation = [];
@@ -204,17 +227,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const initialAnalysis = await callOllama(
                 analysisModelSelect.value, 
                 promptText.value, 
-                base64Image
+                fileContent,
+                contentType
             );
 
             conversation.push({ role: 'assistant', content: initialAnalysis });
             addMessageToChat('ai', initialAnalysis);
-
             chatControls.classList.remove('hidden');
 
         } catch (error) {
             console.error('Errore durante l\'analisi iniziale:', error);
-            addMessageToChat('ai', `Si è verificato un errore durante l'analisi iniziale: ${error.message}`);
+            addMessageToChat('ai', `Si è verificato un errore: ${error.message}`);
         } finally {
             chatLoader.classList.add('hidden');
             submitBtn.disabled = false;
@@ -222,7 +245,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Gestione invio messaggio in chat
     chatForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         const userMessage = chatInput.value.trim();
@@ -236,13 +258,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const initialReport = conversation.find(m => m.role === 'assistant').content;
         const lastQuestion = conversation.filter(m => m.role === 'user').slice(-1)[0].content;
-        const chatPromptContext = `Sei un assistente AI esperto. Hai già fornito il seguente report iniziale basato su un'immagine:\n\n---REPORT INIZIALE---\n${initialReport}\n\n---FINE REPORT---\n\nOra, rispondi alla seguente domanda di approfondimento dell'utente: "${lastQuestion}"`;
-
+        const chatPromptContext = `Sei un assistente AI esperto. Hai già fornito il seguente report iniziale:\n\n---REPORT INIZIALE---\n${initialReport}\n\n---FINE REPORT---\n\nOra, rispondi alla seguente domanda di approfondimento: "${lastQuestion}"`;
+        
         try {
             const aiResponse = await callOllama(
                 chatModelSelect.value, 
                 chatPromptContext,
-                base64Image // Invia sempre l'immagine per il contesto visivo
+                fileContent,
+                contentType
             );
 
             addMessageToChat('ai', aiResponse);
@@ -259,14 +282,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- FUNZIONI HELPER ---
 
-    async function callOllama(model, prompt, image) {
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = (error) => reject(error);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function extractTextFromPdf(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            fullText += textContent.items.map(item => item.str).join(' ') + '\n\n';
+        }
+        return fullText;
+    }
+
+    async function callOllama(model, prompt, content, type) {
         const ollamaUrl = 'http://localhost:11434/api/generate';
+        
         const payload = {
             model: model,
-            prompt: prompt,
-            images: [image],
             stream: false
         };
+
+        if (type === 'image') {
+            payload.prompt = prompt;
+            payload.images = [content];
+        } else if (type === 'text') {
+            payload.prompt = `Basandoti sul seguente referto, rispondi alla domanda.\n\n---REFERTO---\n${content}\n\n---DOMANDA---\n${prompt}`;
+        }
 
         const response = await fetch(ollamaUrl, {
             method: 'POST',
@@ -288,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
         bubble.textContent = text;
         chatHistory.appendChild(bubble);
-        chatHistory.scrollTop = chatHistory.scrollHeight; // Auto-scroll
+        chatHistory.scrollTop = chatHistory.scrollHeight;
     }
 });
 </script>
