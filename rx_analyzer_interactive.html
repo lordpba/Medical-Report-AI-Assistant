@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Assistente Analisi Referti (Diretto a Ollama)</title>
+    <title>Assistente Analisi Referti</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Inclusione di PDF.js da CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
@@ -105,7 +105,7 @@
                 </div>
                 <div id="preview-container" class="bg-white rounded-lg shadow-md p-6 hidden">
                     <h2 class="text-xl font-bold mb-4 border-b pb-2">Anteprima Referto Caricato</h2>
-                    <div id="preview-content" class="bg-gray-50 p-2 rounded"></div>
+                    <div id="preview-content" class="bg-gray-50 p-2 rounded space-y-4"></div>
                 </div>
             </div>
 
@@ -136,6 +136,10 @@
                         <button type="submit" class="bg-blue-600 text-white font-bold py-3 px-4 rounded-r-lg hover:bg-blue-700">Invia</button>
                     </form>
                 </div>
+                
+                <div class="mt-4 pt-4 border-t text-center text-xs text-gray-500">
+                    <p><strong>Disclaimer:</strong> Le analisi generate dall'AI possono contenere errori. Questo strumento è destinato esclusivamente a scopi di ricerca e didattici. È sempre necessaria la supervisione e il parere di un medico qualificato per qualsiasi decisione clinica.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -159,15 +163,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const reportTypeSelect = document.getElementById('report-type-select');
 
     // --- STATO APPLICAZIONE ---
-    let fileContent = null; // Può essere base64 per immagini o testo per pdf/txt
-    let contentType = null; // 'image' o 'text'
+    let fileContent = null; 
+    let contentType = null; // 'image', 'images_array', o 'text'
     let conversation = [];
 
     // --- PROMPT DI DEFAULT ---
     const defaultPrompts = {
         rx: "Analizza questa radiografia del torace e descrivi nel dettaglio ogni eventuale anomalia, basandoti esclusivamente sull'evidenza visiva.",
-        ecg: "Sei un assistente AI specializzato in cardiologia. Analizza questo tracciato ECG. Valuta il ritmo (es. sinusale, fibrillazione), calcola la frequenza cardiaca, misura gli intervalli (PR, QRS, QT) e l'asse cardiaco. Identifica e descrivi qualsiasi anomalia morfologica (es. ipertrofia, ischemia) o aritmia presente.",
-        blood: "Sei un assistente AI esperto in analisi di laboratorio. Interpreta i risultati di queste analisi del sangue. Per ogni valore, indica se rientra nei range di normalità standard. Evidenzia i valori anomali (alti o bassi), spiega le loro possibili implicazioni cliniche e le correlazioni tra di essi. Fornisci un sommario conclusivo."
+        ecg: "Sei un assistente AI specializzato in cardiologia. Analizza questo tracciato ECG. Valuta il ritmo, calcola la frequenza cardiaca, e descrivi qualsiasi anomalia.",
+        blood: "Sei un assistente AI esperto in analisi di laboratorio. Interpreta i risultati di queste analisi del sangue. Evidenzia i valori anomali e spiega le loro possibili implicazioni."
     };
 
     // --- GESTIONE EVENTI ---
@@ -181,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const file = event.target.files[0];
         if (!file) return;
 
-        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Caricamento file...</p></div>`;
+        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Elaborazione file in corso...</p></div>`;
         previewContainer.classList.remove('hidden');
         chatColumn.classList.add('hidden');
 
@@ -191,9 +195,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 fileContent = await readFileAsBase64(file);
                 previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Anteprima Referto" class="w-full h-auto rounded-md object-contain"/>`;
             } else if (file.type === 'application/pdf') {
-                contentType = 'text';
-                fileContent = await extractTextFromPdf(file);
-                previewContent.innerHTML = `<pre>${fileContent}</pre>`;
+                contentType = 'images_array';
+                fileContent = await renderPdfToImages(file);
+                previewContent.innerHTML = ''; // Pulisce
+                fileContent.forEach((imgDataUrl, index) => {
+                    const imgElement = document.createElement('img');
+                    // Per visualizzare le immagini base64, dobbiamo ri-aggiungere il prefisso
+                    imgElement.src = 'data:image/jpeg;base64,' + imgDataUrl;
+                    imgElement.alt = `Pagina ${index + 1} del PDF`;
+                    imgElement.classList.add('w-full', 'h-auto', 'rounded-md', 'object-contain', 'mb-4');
+                    previewContent.appendChild(imgElement);
+                });
             } else if (file.type === 'text/plain') {
                 contentType = 'text';
                 fileContent = await file.text();
@@ -258,7 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const initialReport = conversation.find(m => m.role === 'assistant').content;
         const lastQuestion = conversation.filter(m => m.role === 'user').slice(-1)[0].content;
-        const chatPromptContext = `Sei un assistente AI esperto. Hai già fornito il seguente report iniziale:\n\n---REPORT INIZIALE---\n${initialReport}\n\n---FINE REPORT---\n\nOra, rispondi alla seguente domanda di approfondimento: "${lastQuestion}"`;
+        const chatPromptContext = `Sei un assistente AI esperto. Hai già fornito il seguente report iniziale basato su un referto:\n\n---REPORT INIZIALE---\n${initialReport}\n\n---FINE REPORT---\n\nOra, rispondi alla seguente domanda di approfondimento: "${lastQuestion}"`;
         
         try {
             const aiResponse = await callOllama(
@@ -291,16 +303,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function extractTextFromPdf(file) {
+    async function renderPdfToImages(file) {
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-        let fullText = '';
+        const imagePromises = [];
+
         for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            fullText += textContent.items.map(item => item.str).join(' ') + '\n\n';
+            const pagePromise = pdf.getPage(i).then(async (page) => {
+                const viewport = page.getViewport({ scale: 1.5 }); // Aumenta la scala per una qualità migliore
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                // Usa JPEG per una migliore compressione
+                return canvas.toDataURL('image/jpeg', 0.9); 
+            });
+            imagePromises.push(pagePromise);
         }
-        return fullText;
+        const imageDataUrls = await Promise.all(imagePromises);
+        // Rimuove il prefisso 'data:image/jpeg;base64,' da ogni immagine
+        return imageDataUrls.map(url => url.split(',')[1]);
     }
 
     async function callOllama(model, prompt, content, type) {
@@ -314,6 +338,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'image') {
             payload.prompt = prompt;
             payload.images = [content];
+        } else if (type === 'images_array') {
+             payload.prompt = `Analizza le seguenti immagini, che rappresentano le pagine sequenziali di un unico referto. ${prompt}`;
+             payload.images = content; // content è già un array di stringhe base64
         } else if (type === 'text') {
             payload.prompt = `Basandoti sul seguente referto, rispondi alla domanda.\n\n---REFERTO---\n${content}\n\n---DOMANDA---\n${prompt}`;
         }
@@ -345,3 +372,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
 </body>
 </html>
+
