@@ -1,1 +1,3 @@
 1 - https://it.wikipedia.org/wiki/Polmonite
+2 - ECG from paper GEM: Empowering MLLM for Grounded ECG Understanding with Time Series and Images
+	(Xiang Lan 1 Feng Wu 1 Kai He 1 Qinghao Zhao 2 Shenda Hong 3 4 Mengling Feng 1)
