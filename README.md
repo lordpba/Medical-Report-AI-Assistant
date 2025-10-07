@@ -65,3 +65,9 @@ For this application to work correctly, it is essential to use **multi-modal (vi
 3.  Open your browser and navigate to `http://127.0.0.1:5000`.
 
 The application will now be running and ready to use.
+
+---
+
+## Disclaimer
+
+**Disclaimer:** AI-generated analyses may contain errors. This tool is intended for research and educational purposes only. The supervision and opinion of a qualified medical professional is always required for any clinical decisions.
