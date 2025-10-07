@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Report Analysis Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #chat-history, #preview-content {
+            height: 60vh; /* Adaptive height based on viewport */
+            overflow-y: auto;
+        }
+        .chat-bubble {
+            max-width: 85%;
+            padding: 10px 15px;
+            border-radius: 20px;
+            margin-bottom: 10px;
+            word-wrap: break-word;
+        }
+        .user-bubble {
+            background-color: #3b82f6;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 5px;
+        }
+        .ai-bubble {
+            background-color: #e5e7eb;
+            color: #1f2937;
+            align-self: flex-start;
+            border-bottom-left-radius: 5px;
+        }
+        #preview-content pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 0.875rem;
+            color: #374151;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="w-full max-w-screen-2xl mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Medical Report Analysis Assistant</h1>
+            <p class="text-md text-gray-600 mt-2">Upload a report (image, PDF, TXT), get an analysis, and ask questions.</p>
+        </header>
+
+        <div class="grid md:grid-cols-2 gap-8">
+            <!-- Left Column: Controls and Preview -->
+            <div>
+                <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+                    <div class="mb-4">
+                        <label for="report-type-select" class="block text-sm font-medium text-gray-700 mb-2">1. Select Report Type:</label>
+                        <select id="report-type-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                            <option value="rx">Radiography (X-ray)</option>
+                            <option value="ecg">Electrocardiogram (ECG)</option>
+                            <option value="blood">Blood Test</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="file-upload" class="block text-sm font-medium text-gray-700 mb-2">2. Upload Report File:</label>
+                        <input type="file" id="file-upload" accept="image/png,image/jpeg,image/bmp,image/webp,application/pdf,text/plain" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="analysis-model-select" class="block text-sm font-medium text-gray-700 mb-2">3. Select Model for Initial Analysis:</label>
+                        <select id="analysis-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                            <option value="puyangwang/medgemma-27b-it:q4_k_m" selected>MedGemma 27B</option>
+                            <option value="gemma3:27b">Gemma3 27B</option>
+                            <option value="gemma3:12b">Gemma3 12B</option>
+                            <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-6">
+                         <label for="prompt-text" class="block text-sm font-medium text-gray-700 mb-2">4. Analysis Prompt (editable):</label>
+                         <textarea id="prompt-text" rows="5" class="w-full p-2 border border-gray-300 rounded-md shadow-sm"></textarea>
+                    </div>
+
+                    <button id="submit-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition duration-300 ease-in-out disabled:bg-gray-400">
+                        Generate Initial Analysis
+                    </button>
+                </div>
+                <div id="preview-container" class="bg-white rounded-lg shadow-md p-6 hidden">
+                    <h2 class="text-xl font-bold mb-4 border-b pb-2">Uploaded Report Preview</h2>
+                    <div id="preview-content" class="bg-gray-50 p-2 rounded space-y-4"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Chat -->
+            <div id="chat-column" class="bg-white rounded-lg shadow-md p-6 flex flex-col hidden">
+                <h2 class="text-xl font-bold mb-4 border-b pb-2">Interactive Analysis</h2>
+                <div id="chat-history" class="flex-grow flex flex-col space-y-2 p-3 bg-gray-50 rounded-md mb-4">
+                    <!-- Chat messages will be added here -->
+                </div>
+                
+                 <div id="chat-loader" class="flex items-center text-gray-500 mb-4 hidden">
+                    <div class="loader"></div>
+                    <p class="ml-3">AI is thinking...</p>
+                </div>
+
+                <div id="chat-controls" class="hidden">
+                     <div class="mb-4">
+                        <label for="chat-model-select" class="block text-sm font-medium text-gray-700 mb-2">Model for Chat:</label>
+                        <select id="chat-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                            <option value="amsaravi/medgemma-4b-it:q6" selected>MedGemma 4B (Fast)</option>
+                            <option value="gemma3:4b">Gemma3 4B (Fast)</option>
+                            <option value="gemma3:12b">Gemma3 12B (Medium)</option>
+                            <option value="puyangwang/medgemma-27b-it:q4_k_m">MedGemma 27B (Slow)</option>
+                        </select>
+                    </div>
+                    <form id="chat-form" class="flex items-center">
+                        <input type="text" id="chat-input" placeholder="Ask a follow-up question..." class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button type="submit" class="bg-blue-600 text-white font-bold py-3 px-4 rounded-r-lg hover:bg-blue-700">Send</button>
+                    </form>
+                </div>
+                
+                <div class="mt-4 pt-4 border-t text-center text-xs text-gray-500">
+                    <p><strong>Disclaimer:</strong> AI-generated analyses may contain errors. This tool is intended for research and educational purposes only. The supervision and opinion of a qualified medical professional is always required for any clinical decisions.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // --- UI ELEMENTS ---
+    const fileUpload = document.getElementById('file-upload');
+    const submitBtn = document.getElementById('submit-btn');
+    const previewContainer = document.getElementById('preview-container');
+    const previewContent = document.getElementById('preview-content');
+    const chatColumn = document.getElementById('chat-column');
+    const chatHistory = document.getElementById('chat-history');
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const chatControls = document.getElementById('chat-controls');
+    const chatLoader = document.getElementById('chat-loader');
+    const analysisModelSelect = document.getElementById('analysis-model-select');
+    const chatModelSelect = document.getElementById('chat-model-select');
+    const promptText = document.getElementById('prompt-text');
+    const reportTypeSelect = document.getElementById('report-type-select');
+
+    // --- APPLICATION STATE ---
+    let uploadedFile = null;
+    let contentType = null; // 'image', 'images_array', or 'text'
+    let conversation = [];
+
+    // --- DEFAULT PROMPTS ---
+    const defaultPrompts = {
+        rx: "Analyze this chest X-ray and describe in detail any potential anomalies, based exclusively on the visual evidence.",
+        ecg: "You are an AI assistant specializing in cardiology. Analyze this ECG trace. Assess the rhythm, calculate the heart rate, and describe any abnormalities.",
+        blood: "You are an AI assistant expert in laboratory analysis. Interpret these blood test results. Highlight any abnormal values and explain their potential clinical implications."
+    };
+
+    // --- EVENT HANDLERS ---
+
+    reportTypeSelect.addEventListener('change', (event) => {
+        promptText.value = defaultPrompts[event.target.value];
+    });
+    promptText.value = defaultPrompts[reportTypeSelect.value];
+
+    fileUpload.addEventListener('change', async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        uploadedFile = file; // Save the complete file object
+        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Processing file...</p></div>`;
+        previewContainer.classList.remove('hidden');
+        chatColumn.classList.add('hidden');
+
+        try {
+            if (file.type.startsWith('image/')) {
+                contentType = 'image';
+                previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Report Preview" class="w-full h-auto rounded-md object-contain"/>`;
+            } else if (file.type === 'application/pdf') {
+                contentType = 'images_array';
+                // pdf.js is not available in this environment, so we will rely on the backend.
+                // For a better UX, we can show a placeholder or the first page.
+                // For now, we just show the file name.
+                previewContent.innerHTML = `<p>PDF file selected: ${file.name}. Preview will be shown after processing by the backend.</p>`;
+            } else if (file.type === 'text/plain') {
+                contentType = 'text';
+                const textContent = await file.text();
+                previewContent.innerHTML = `<pre>${textContent}</pre>`;
+            } else {
+                throw new Error('Unsupported file format.');
+            }
+        } catch (error) {
+            console.error(error);
+            previewContent.innerHTML = `<p class="text-red-500">Error loading file: ${error.message}</p>`;
+            uploadedFile = null;
+            contentType = null;
+        }
+    });
+
+    submitBtn.addEventListener('click', async () => {
+        if (!uploadedFile) {
+            alert('Please upload a valid file.');
+            return;
+        }
+        await analyzeContent(analysisModelSelect.value, promptText.value, true);
+    });
+
+    chatForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const userMessage = chatInput.value.trim();
+        if (!userMessage) return;
+
+        addMessageToChat('user', userMessage);
+        conversation.push({ role: 'user', content: userMessage });
+        chatInput.value = '';
+
+        const initialReport = conversation.find(m => m.role === 'assistant').content;
+        const chatPromptContext = `You are an expert AI assistant. You have already provided the following initial report based on a document:\n\n---INITIAL REPORT---\n${initialReport}\n\n---END REPORT---\n\nNow, answer the following follow-up question: "${userMessage}"`;
+        
+        await analyzeContent(chatModelSelect.value, chatPromptContext, false);
+    });
+
+    // --- CORE FUNCTIONS ---
+
+    async function analyzeContent(model, prompt, isInitialAnalysis) {
+        if (isInitialAnalysis) {
+            chatColumn.classList.remove('hidden');
+            chatHistory.innerHTML = '';
+            conversation = [];
+            chatControls.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Analyzing...';
+        } else {
+            chatForm.style.visibility = 'hidden';
+        }
+        chatLoader.classList.remove('hidden');
+
+        try {
+            const formData = new FormData();
+            formData.append('file', uploadedFile);
+            formData.append('model', model);
+            formData.append('prompt', prompt);
+            formData.append('contentType', contentType);
+
+            const response = await fetch('/analyze', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `Server error: ${response.status}`);
+            }
+
+            const result = await response.json();
+            const aiResponse = result.response;
+            
+            conversation.push({ role: 'assistant', content: aiResponse });
+            addMessageToChat('ai', aiResponse);
+            
+            if (isInitialAnalysis) {
+                chatControls.classList.remove('hidden');
+            }
+
+        } catch (error) {
+            console.error('Error during analysis:', error);
+            addMessageToChat('ai', `An error occurred: ${error.message}`);
+        } finally {
+            chatLoader.classList.add('hidden');
+            if (isInitialAnalysis) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Generate Initial Analysis';
+            } else {
+                chatForm.style.visibility = 'visible';
+            }
+        }
+    }
+
+    // --- HELPER FUNCTIONS ---
+
+    function addMessageToChat(sender, text) {
+        const bubble = document.createElement('div');
+        bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
+        bubble.textContent = text;
+        chatHistory.appendChild(bubble);
+        chatHistory.scrollTop = chatHistory.scrollHeight;
+    }
+});
+</script>
+
+</body>
+</html>
+
