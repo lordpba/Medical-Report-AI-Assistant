@@ -29,6 +29,9 @@ def analyze():
     images_base64 = []
     
     try:
+        if content_type == 'images_array':
+            prompt = f"Analyze the following images, which represent the sequential pages of a single medical report. {prompt}"
+
         if content_type == 'image':
             image_bytes = file.read()
             images_base64.append(base64.b64encode(image_bytes).decode('utf-8'))
@@ -40,6 +43,7 @@ def analyze():
                 img_bytes = pix.tobytes("jpeg")
                 images_base64.append(base64.b64encode(img_bytes).decode('utf-8'))
             doc.close()
+            images_base64.reverse()
         elif content_type == 'text':
             text_content = file.read().decode('utf-8')
             prompt = f"Based on the following report, answer the question.\n\n---REPORT---\n{text_content}\n\n---QUESTION---\n{prompt}"
@@ -49,7 +53,12 @@ def analyze():
         return jsonify({'error': f'Error processing file: {str(e)}'}), 500
 
     try:
-        payload = {'model': model, 'prompt': prompt, 'stream': False}
+        # Set a low temperature for more deterministic and consistent responses
+        options = {
+            "temperature": 0.1
+        }
+        
+        payload = {'model': model, 'prompt': prompt, 'stream': False, 'options': options}
         if images_base64:
             payload['images'] = images_base64
 

@@ -6,6 +6,8 @@
     <title>Medical Report Analysis Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <!-- Libreria per il rendering del Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
     </script>
@@ -25,6 +27,17 @@
         .user-bubble { background-color: #3b82f6; color: white; align-self: flex-end; border-bottom-right-radius: 5px; }
         .ai-bubble { background-color: #e5e7eb; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 5px; }
         #preview-content pre, #preview-content p { white-space: pre-wrap; word-wrap: break-word; font-size: 0.875rem; color: #374151; }
+        /* Stili per il contenuto Markdown renderizzato */
+        .ai-bubble h1, .ai-bubble h2, .ai-bubble h3 { margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 600; line-height: 1.2; }
+        .ai-bubble h1 { font-size: 1.25rem; }
+        .ai-bubble h2 { font-size: 1.1rem; }
+        .ai-bubble p { margin-bottom: 0.5rem; }
+        .ai-bubble ul, .ai-bubble ol { list-style-position: inside; margin-left: 0.5rem; margin-bottom: 0.5rem; }
+        .ai-bubble ul { list-style-type: disc; }
+        .ai-bubble ol { list-style-type: decimal; }
+        .ai-bubble li { margin-bottom: 0.25rem; }
+        .ai-bubble strong { font-weight: 600; }
+        .ai-bubble code { background-color: #d1d5db; padding: 2px 4px; border-radius: 4px; font-family: monospace; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -50,15 +63,15 @@
 
                     <div class="mb-4">
                         <label for="file-upload" class="block text-sm font-medium text-gray-700 mb-2">2. Upload Report File:</label>
-                        <input type="file" id="file-upload" accept="image/png,image/jpeg,image/bmp,image/webp,application/pdf,text/plain" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                        <input type="file" id="file-upload" accept="image/png,image/jpeg,image/bmp,image-webp,application/pdf,text/plain" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
                     </div>
                     
                     <div class="mb-4">
                         <label for="analysis-model-select" class="block text-sm font-medium text-gray-700 mb-2">3. Select Model for Initial Analysis:</label>
                         <select id="analysis-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
-                            <option value="puyangwang/medgemma-27b-it:q4_k_m" selected>MedGemma 27B</option>
-                            <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
+                            <option value="puyangwang/medgemma-27b-it:q4_k_m" selected>MedGemma 27B (Recommended)</option>
                             <option value="gemma3:27b">Gemma3 27B</option>
+                            <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
                             <option value="gemma3:12b">Gemma3 12B</option>
                             <option value="gemma3:4b">Gemma3 4B</option>
                         </select>
@@ -82,12 +95,13 @@
             <!-- Right Column: Chat -->
             <div id="chat-column" class="bg-white rounded-lg shadow-md p-6 flex flex-col hidden">
                 <h2 class="text-xl font-bold mb-4 border-b pb-2">Interactive Analysis</h2>
-                <div id="chat-history" class="flex-grow flex flex-col space-y-2 p-3 bg-gray-50 rounded-md mb-4">
-                </div>
                 
-                 <div id="chat-loader" class="flex items-center text-gray-500 mb-4 hidden">
+                <div id="chat-loader" class="flex items-center text-gray-500 mb-4 hidden">
                     <div class="loader"></div>
                     <p class="ml-3">AI is thinking...</p>
+                </div>
+                
+                <div id="chat-history" class="flex-grow flex flex-col space-y-2 p-3 bg-gray-50 rounded-md mb-4">
                 </div>
 
                 <div id="chat-controls" class="hidden pt-4 mt-4 border-t">
@@ -138,9 +152,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // DEFAULT PROMPTS
     const defaultPrompts = {
-        rx: "Analyze this chest X-ray and describe in detail any potential anomalies, based exclusively on the visual evidence.",
-        ecg: "You are an AI assistant specializing in cardiology. Analyze this ECG trace. Assess the rhythm, calculate the heart rate, and describe any abnormalities.",
-        blood: "You are an AI assistant expert in laboratory analysis. Interpret these blood test results. Highlight any abnormal values and explain their potential clinical implications."
+        rx: "Analyze this chest X-ray and describe in detail any potential anomalies, based exclusively on the visual evidence. Format your entire response using Markdown for clarity. Use headings, bullet points, and bold text to highlight key findings.",
+        ecg: "You are an AI assistant specializing in cardiology. Analyze this ECG trace. Assess the rhythm, calculate the heart rate, and describe any abnormalities. Format your entire response using Markdown for clarity. Use headings for sections (e.g., Rhythm, Heart Rate, Intervals), bullet points for lists, and bold text for abnormal values.",
+        blood: "You are an AI assistant expert in laboratory analysis. Provide a comprehensive interpretation of these blood test results. For each parameter, comment on the value in relation to its reference range. Provide a summary of the key findings. Format your entire response using Markdown for clarity, using headings, bullet points, and bold text."
     };
     
     // INITIALIZATION
@@ -252,7 +266,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
             const aiResponse = result.response;
             
-            // Remove the initial system message before showing the result
             if (isInitialAnalysis) {
                 const systemMessage = chatHistory.querySelector('.system-message');
                 if (systemMessage) systemMessage.remove();
@@ -289,7 +302,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             const bubble = document.createElement('div');
             bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
-            bubble.textContent = text;
+            // Converti il testo Markdown in HTML prima di inserirlo
+            bubble.innerHTML = marked.parse(text);
             messageContainer.appendChild(bubble);
 
             if (sender === 'ai' && stats) {
