@@ -1,6 +1,7 @@
 import base64
 import fitz  # PyMuPDF
 import ollama
+import time
 from flask import Flask, render_template, request, jsonify
 
 # Initialize the Flask application
@@ -50,11 +51,27 @@ def analyze():
         else:
             return jsonify({'error': 'Invalid content type.'}), 400
 
-        # Call Ollama
+        # Call Ollama and measure performance
+        start_time = time.time()
         client = ollama.Client()
         response = client.generate(**payload)
+        end_time = time.time()
 
-        return jsonify({'response': response['response']})
+        # Calculate performance stats
+        total_duration = end_time - start_time
+        eval_count = response.get('eval_count', 0)
+        eval_duration_ns = response.get('eval_duration', 1) # Avoid division by zero
+        
+        # Calculate tokens per second, handle potential zero duration
+        tokens_per_second = (eval_count / (eval_duration_ns / 1_000_000_000)) if eval_duration_ns > 0 else 0
+
+        stats = {
+            'total_duration': f"{total_duration:.2f}",
+            'token_count': eval_count,
+            'tokens_per_second': f"{tokens_per_second:.2f}"
+        }
+
+        return jsonify({'response': response['response'], 'stats': stats})
 
     except Exception as e:
         print(f"Error during analysis: {e}")

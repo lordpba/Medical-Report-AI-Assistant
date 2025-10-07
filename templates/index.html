@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medical Report Analysis Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- pdf.js library is no longer needed for client-side rendering -->
     <style>
         body {
             font-family: 'Inter', sans-serif;
@@ -44,7 +45,7 @@
             align-self: flex-start;
             border-bottom-left-radius: 5px;
         }
-        #preview-content pre {
+        #preview-content pre, #preview-content p {
             white-space: pre-wrap;
             word-wrap: break-word;
             font-size: 0.875rem;
@@ -115,7 +116,11 @@
                     <p class="ml-3">AI is thinking...</p>
                 </div>
 
-                <div id="chat-controls" class="hidden">
+                <div id="stats-container" class="text-xs text-gray-500 border-t pt-3 mt-3 hidden">
+                    <!-- Performance stats will be populated here -->
+                </div>
+
+                <div id="chat-controls" class="hidden pt-4 mt-4 border-t">
                      <div class="mb-4">
                         <label for="chat-model-select" class="block text-sm font-medium text-gray-700 mb-2">Model for Chat:</label>
                         <select id="chat-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
@@ -155,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatModelSelect = document.getElementById('chat-model-select');
     const promptText = document.getElementById('prompt-text');
     const reportTypeSelect = document.getElementById('report-type-select');
+    const statsContainer = document.getElementById('stats-container');
 
     // --- APPLICATION STATE ---
     let uploadedFile = null;
@@ -180,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return;
 
         uploadedFile = file; // Save the complete file object
-        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Processing file...</p></div>`;
+        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Preparing file preview...</p></div>`;
         previewContainer.classList.remove('hidden');
         chatColumn.classList.add('hidden');
 
@@ -190,10 +196,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Report Preview" class="w-full h-auto rounded-md object-contain"/>`;
             } else if (file.type === 'application/pdf') {
                 contentType = 'images_array';
-                // pdf.js is not available in this environment, so we will rely on the backend.
-                // For a better UX, we can show a placeholder or the first page.
-                // For now, we just show the file name.
-                previewContent.innerHTML = `<p>PDF file selected: ${file.name}. Preview will be shown after processing by the backend.</p>`;
+                // Display a simple confirmation for PDFs, as processing is now done on the backend.
+                previewContent.innerHTML = `<p class="p-4">PDF file selected: <strong>${file.name}</strong>.<br><br>The backend server will process its pages into images for analysis.</p>`;
             } else if (file.type === 'text/plain') {
                 contentType = 'text';
                 const textContent = await file.text();
@@ -240,6 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
             chatHistory.innerHTML = '';
             conversation = [];
             chatControls.classList.add('hidden');
+            statsContainer.classList.add('hidden');
             submitBtn.disabled = true;
             submitBtn.textContent = 'Analyzing...';
         } else {
@@ -268,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const aiResponse = result.response;
             
             conversation.push({ role: 'assistant', content: aiResponse });
-            addMessageToChat('ai', aiResponse);
+            addMessageToChat('ai', aiResponse, result.stats);
             
             if (isInitialAnalysis) {
                 chatControls.classList.remove('hidden');
@@ -290,11 +295,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- HELPER FUNCTIONS ---
 
-    function addMessageToChat(sender, text) {
+    function addMessageToChat(sender, text, stats = null) {
+        const messageContainer = document.createElement('div');
+        
         const bubble = document.createElement('div');
         bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
         bubble.textContent = text;
-        chatHistory.appendChild(bubble);
+        
+        messageContainer.appendChild(bubble);
+
+        if (sender === 'ai' && stats) {
+            const statsDiv = document.createElement('div');
+            statsDiv.classList.add('text-xs', 'text-gray-500', 'mt-2', 'pl-2');
+            statsDiv.innerHTML = `
+                <strong>Time:</strong> ${stats.total_duration}s | 
+                <strong>Tokens:</strong> ${stats.token_count} | 
+                <strong>TPS:</strong> ${stats.tokens_per_second}
+            `;
+            messageContainer.appendChild(statsDiv);
+        }
+        
+        chatHistory.appendChild(messageContainer);
         chatHistory.scrollTop = chatHistory.scrollHeight;
     }
 });
