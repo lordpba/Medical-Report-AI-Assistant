@@ -5,11 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Medical Report Analysis Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- pdf.js library is no longer needed for client-side rendering -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+    </script>
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
+        body { font-family: 'Inter', sans-serif; }
         .loader {
             border: 4px solid #f3f3f3;
             border-top: 4px solid #3498db;
@@ -18,39 +19,12 @@
             height: 24px;
             animation: spin 1s linear infinite;
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        #chat-history, #preview-content {
-            height: 60vh; /* Adaptive height based on viewport */
-            overflow-y: auto;
-        }
-        .chat-bubble {
-            max-width: 85%;
-            padding: 10px 15px;
-            border-radius: 20px;
-            margin-bottom: 10px;
-            word-wrap: break-word;
-        }
-        .user-bubble {
-            background-color: #3b82f6;
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 5px;
-        }
-        .ai-bubble {
-            background-color: #e5e7eb;
-            color: #1f2937;
-            align-self: flex-start;
-            border-bottom-left-radius: 5px;
-        }
-        #preview-content pre, #preview-content p {
-            white-space: pre-wrap;
-            word-wrap: break-word;
-            font-size: 0.875rem;
-            color: #374151;
-        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #chat-history, #preview-content { height: 60vh; overflow-y: auto; }
+        .chat-bubble { max-width: 85%; padding: 10px 15px; border-radius: 20px; margin-bottom: 10px; word-wrap: break-word; }
+        .user-bubble { background-color: #3b82f6; color: white; align-self: flex-end; border-bottom-right-radius: 5px; }
+        .ai-bubble { background-color: #e5e7eb; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 5px; }
+        #preview-content pre, #preview-content p { white-space: pre-wrap; word-wrap: break-word; font-size: 0.875rem; color: #374151; }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -83,9 +57,10 @@
                         <label for="analysis-model-select" class="block text-sm font-medium text-gray-700 mb-2">3. Select Model for Initial Analysis:</label>
                         <select id="analysis-model-select" class="w-full p-2 border border-gray-300 rounded-md shadow-sm">
                             <option value="puyangwang/medgemma-27b-it:q4_k_m" selected>MedGemma 27B</option>
+                            <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
                             <option value="gemma3:27b">Gemma3 27B</option>
                             <option value="gemma3:12b">Gemma3 12B</option>
-                            <option value="amsaravi/medgemma-4b-it:q6">MedGemma 4B</option>
+                            <option value="gemma3:4b">Gemma3 4B</option>
                         </select>
                     </div>
 
@@ -108,16 +83,11 @@
             <div id="chat-column" class="bg-white rounded-lg shadow-md p-6 flex flex-col hidden">
                 <h2 class="text-xl font-bold mb-4 border-b pb-2">Interactive Analysis</h2>
                 <div id="chat-history" class="flex-grow flex flex-col space-y-2 p-3 bg-gray-50 rounded-md mb-4">
-                    <!-- Chat messages will be added here -->
                 </div>
                 
                  <div id="chat-loader" class="flex items-center text-gray-500 mb-4 hidden">
                     <div class="loader"></div>
                     <p class="ml-3">AI is thinking...</p>
-                </div>
-
-                <div id="stats-container" class="text-xs text-gray-500 border-t pt-3 mt-3 hidden">
-                    <!-- Performance stats will be populated here -->
                 </div>
 
                 <div id="chat-controls" class="hidden pt-4 mt-4 border-t">
@@ -145,7 +115,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- UI ELEMENTS ---
+    // UI ELEMENTS
     const fileUpload = document.getElementById('file-upload');
     const submitBtn = document.getElementById('submit-btn');
     const previewContainer = document.getElementById('preview-container');
@@ -160,33 +130,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatModelSelect = document.getElementById('chat-model-select');
     const promptText = document.getElementById('prompt-text');
     const reportTypeSelect = document.getElementById('report-type-select');
-    const statsContainer = document.getElementById('stats-container');
 
-    // --- APPLICATION STATE ---
+    // APP STATE
     let uploadedFile = null;
-    let contentType = null; // 'image', 'images_array', or 'text'
+    let contentType = null;
     let conversation = [];
 
-    // --- DEFAULT PROMPTS ---
+    // DEFAULT PROMPTS
     const defaultPrompts = {
         rx: "Analyze this chest X-ray and describe in detail any potential anomalies, based exclusively on the visual evidence.",
         ecg: "You are an AI assistant specializing in cardiology. Analyze this ECG trace. Assess the rhythm, calculate the heart rate, and describe any abnormalities.",
         blood: "You are an AI assistant expert in laboratory analysis. Interpret these blood test results. Highlight any abnormal values and explain their potential clinical implications."
     };
-
-    // --- EVENT HANDLERS ---
-
+    
+    // INITIALIZATION
+    promptText.value = defaultPrompts[reportTypeSelect.value];
+    
+    // EVENT HANDLERS
     reportTypeSelect.addEventListener('change', (event) => {
         promptText.value = defaultPrompts[event.target.value];
     });
-    promptText.value = defaultPrompts[reportTypeSelect.value];
 
     fileUpload.addEventListener('change', async (event) => {
         const file = event.target.files[0];
         if (!file) return;
 
-        uploadedFile = file; // Save the complete file object
-        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Preparing file preview...</p></div>`;
+        uploadedFile = file;
+        previewContent.innerHTML = `<div class="flex items-center justify-center h-full"><div class="loader"></div><p class="ml-3">Processing file preview...</p></div>`;
         previewContainer.classList.remove('hidden');
         chatColumn.classList.add('hidden');
 
@@ -196,8 +166,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Report Preview" class="w-full h-auto rounded-md object-contain"/>`;
             } else if (file.type === 'application/pdf') {
                 contentType = 'images_array';
-                // Display a simple confirmation for PDFs, as processing is now done on the backend.
-                previewContent.innerHTML = `<p class="p-4">PDF file selected: <strong>${file.name}</strong>.<br><br>The backend server will process its pages into images for analysis.</p>`;
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                previewContent.innerHTML = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    const canvas = document.createElement('canvas');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    const context = canvas.getContext('2d');
+                    await page.render({ canvasContext: context, viewport: viewport }).promise;
+                    const img = document.createElement('img');
+                    img.src = canvas.toDataURL('image/jpeg');
+                    img.alt = `Page ${i}`;
+                    img.classList.add('w-full', 'h-auto', 'rounded-md', 'object-contain', 'mb-4');
+                    previewContent.appendChild(img);
+                }
             } else if (file.type === 'text/plain') {
                 contentType = 'text';
                 const textContent = await file.text();
@@ -236,17 +221,16 @@ document.addEventListener('DOMContentLoaded', () => {
         await analyzeContent(chatModelSelect.value, chatPromptContext, false);
     });
 
-    // --- CORE FUNCTIONS ---
-
+    // CORE FUNCTIONS
     async function analyzeContent(model, prompt, isInitialAnalysis) {
         if (isInitialAnalysis) {
             chatColumn.classList.remove('hidden');
             chatHistory.innerHTML = '';
             conversation = [];
             chatControls.classList.add('hidden');
-            statsContainer.classList.add('hidden');
             submitBtn.disabled = true;
             submitBtn.textContent = 'Analyzing...';
+            addMessageToChat('system', 'Request sent to server. The analysis may take several minutes. Please be patient.');
         } else {
             chatForm.style.visibility = 'hidden';
         }
@@ -259,11 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
             formData.append('prompt', prompt);
             formData.append('contentType', contentType);
 
-            const response = await fetch('/analyze', {
-                method: 'POST',
-                body: formData,
-            });
-
+            const response = await fetch('/analyze', { method: 'POST', body: formData });
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.error || `Server error: ${response.status}`);
@@ -271,6 +251,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const result = await response.json();
             const aiResponse = result.response;
+            
+            // Remove the initial system message before showing the result
+            if (isInitialAnalysis) {
+                const systemMessage = chatHistory.querySelector('.system-message');
+                if (systemMessage) systemMessage.remove();
+            }
             
             conversation.push({ role: 'assistant', content: aiResponse });
             addMessageToChat('ai', aiResponse, result.stats);
@@ -293,26 +279,29 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- HELPER FUNCTIONS ---
-
+    // HELPER FUNCTIONS
     function addMessageToChat(sender, text, stats = null) {
         const messageContainer = document.createElement('div');
         
-        const bubble = document.createElement('div');
-        bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
-        bubble.textContent = text;
-        
-        messageContainer.appendChild(bubble);
+        if (sender === 'system') {
+            messageContainer.classList.add('system-message', 'text-center', 'text-sm', 'text-gray-500', 'italic', 'my-4');
+            messageContainer.textContent = text;
+        } else {
+            const bubble = document.createElement('div');
+            bubble.classList.add('chat-bubble', sender === 'user' ? 'user-bubble' : 'ai-bubble');
+            bubble.textContent = text;
+            messageContainer.appendChild(bubble);
 
-        if (sender === 'ai' && stats) {
-            const statsDiv = document.createElement('div');
-            statsDiv.classList.add('text-xs', 'text-gray-500', 'mt-2', 'pl-2');
-            statsDiv.innerHTML = `
-                <strong>Time:</strong> ${stats.total_duration}s | 
-                <strong>Tokens:</strong> ${stats.token_count} | 
-                <strong>TPS:</strong> ${stats.tokens_per_second}
-            `;
-            messageContainer.appendChild(statsDiv);
+            if (sender === 'ai' && stats) {
+                const statsDiv = document.createElement('div');
+                statsDiv.classList.add('text-xs', 'text-gray-500', 'mt-2', 'pl-2');
+                statsDiv.innerHTML = `
+                    <strong>Time:</strong> ${stats.total_duration}s | 
+                    <strong>Tokens:</strong> ${stats.token_count} | 
+                    <strong>TPS:</strong> ${stats.tokens_per_second}
+                `;
+                messageContainer.appendChild(statsDiv);
+            }
         }
         
         chatHistory.appendChild(messageContainer);
