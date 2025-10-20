@@ -1,5 +1,13 @@
 # Medical Report AI Assistant with Local Ollama
 
+![GUI Example](gui_example.png)
+
+## ⚠️ Disclaimer
+
+**AI-generated analyses may contain errors. This tool is intended for research and educational purposes only. The supervision and opinion of a qualified medical professional is always required for any clinical decisions.**
+
+---
+
 This project is a local web application for the interactive analysis of medical reports (images, PDFs, and text files) using multi-modal Large Language Models (LLMs) served by Ollama.
 
 The architecture uses a Python (Flask) backend to handle file processing and communication with Ollama, and a clean HTML/JavaScript frontend for the user interface. This approach ensures all data processing remains on the user's local machine, guaranteeing privacy and security.
@@ -91,7 +99,3 @@ Contributions are welcome! If you have suggestions for improvements or find a bu
 This project is licensed under the MIT License. See the `LICENSE` file for details.
 
 ---
-
-## Disclaimer
-
-AI-generated analyses may contain errors. This tool is intended for research and educational purposes only. The supervision and opinion of a qualified medical professional is always required for any clinical decisions.
